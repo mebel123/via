@@ -38,6 +38,7 @@ impl Recording {
             sample_format: hound::SampleFormat::Int,
         };
 
+
         let path = crate::paths::next_recording_path(app);
         self.current_file = Some(path.clone());
 
@@ -104,7 +105,7 @@ impl Recording {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), String> {
+    pub fn stop(&mut self) -> Result<PathBuf, String> {
         if !self.is_recording.load(Ordering::SeqCst) {
             return Err("Not recording".into());
         }
@@ -112,12 +113,18 @@ impl Recording {
         self.is_recording.store(false, Ordering::SeqCst);
 
         if let Some(handle) = self.recording_thread.take() {
-            handle.join().map_err(|_| "Failed to join recording thread".to_string())?;
+            handle
+                .join()
+                .map_err(|_| "Failed to join recording thread".to_string())?;
         }
 
-        self.current_file = None;
+        // Pfad sichern, BEVOR wir ihn löschen
+        let path = self
+            .current_file
+            .take()
+            .ok_or("No recording file available")?;
 
-        Ok(())
+        Ok(path)
     }
 }
 

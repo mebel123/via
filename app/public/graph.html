@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8"/>
+    <title>Lucida Knowledge Graph</title>
+    <style>
+        body { margin:0; background:#0e0e0e; color:#eee; font-family:sans-serif; }
+        #graph { width:100vw; height:100vh; }
+    </style>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+
+<div id="graph"></div>
+
+<script>
+    window.LUCIDA_MODEL = {
+        "meta": {
+            "generated_at": "2026-01-30T19:40:43.151741Z"
+        },
+        "nodes": [
+            {
+                "id": "person:ebel-matthias",
+                "label": "Ebel, Matthias",
+                "type": "person"
+            },
+            {
+                "id": "organization:edologic-gmbh",
+                "label": "edologic GmbH",
+                "type": "organization"
+            },
+            {
+                "id": "person:martin-hetzner",
+                "label": "Martin Hetzner",
+                "type": "person"
+            },
+            {
+                "id": "organization:hetzner-online-gmbh",
+                "label": "Hetzner Online GmbH",
+                "type": "organization"
+            },
+            {
+                "id": "person:herr-matthias-ebel-koch",
+                "label": "Herr Matthias Ebel-Koch",
+                "type": "person"
+            },
+            {
+                "id": "document:90d2fa82-dc12-4057-b783-c78b3420e25b",
+                "label": "invoice",
+                "type": "document",
+                "confidence": 0.95
+            },
+            {
+                "id": "organization:strato-gmbh",
+                "label": "STRATO GmbH",
+                "type": "organization"
+            },
+            {
+                "id": "document:c021d839-e51f-417f-ae93-61335b5b945f",
+                "label": "invoice",
+                "type": "document",
+                "confidence": 1.0
+            },
+            {
+                "id": "document:b6ed44f3-0258-43f9-a869-b433de9dbd35",
+                "label": "Handelsregisterauszug",
+                "type": "document",
+                "confidence": 0.95
+            },
+            {
+                "id": "organization:amtsgericht-wuppertal",
+                "label": "Amtsgericht Wuppertal",
+                "type": "organization"
+            }
+        ],
+        "edges": [
+            {
+                "from": "person:ebel-matthias",
+                "to": "organization:edologic-gmbh",
+                "predicate": "has_role_at",
+                "role": "contact_person",
+                "confidence": 0.8
+            },
+            {
+                "from": "person:martin-hetzner",
+                "to": "organization:hetzner-online-gmbh",
+                "predicate": "has_role_at",
+                "role": "representative",
+                "confidence": 1.0
+            },
+            {
+                "from": "person:herr-matthias-ebel-koch",
+                "to": "organization:edologic-gmbh",
+                "predicate": "has_role_at",
+                "role": "contact_person",
+                "confidence": 0.7
+            },
+            {
+                "from": "document:90d2fa82-dc12-4057-b783-c78b3420e25b",
+                "to": "organization:strato-gmbh",
+                "predicate": "issued_by",
+                "confidence": 0.95
+            },
+            {
+                "from": "document:90d2fa82-dc12-4057-b783-c78b3420e25b",
+                "to": "organization:edologic-gmbh",
+                "predicate": "issued_to",
+                "confidence": 0.95
+            },
+            {
+                "from": "document:c021d839-e51f-417f-ae93-61335b5b945f",
+                "to": "organization:hetzner-online-gmbh",
+                "predicate": "issued_by",
+                "confidence": 1.0
+            },
+            {
+                "from": "document:c021d839-e51f-417f-ae93-61335b5b945f",
+                "to": "organization:edologic-gmbh",
+                "predicate": "issued_to",
+                "confidence": 1.0
+            },
+            {
+                "from": "document:b6ed44f3-0258-43f9-a869-b433de9dbd35",
+                "to": "organization:amtsgericht-wuppertal",
+                "predicate": "issued_by",
+                "confidence": 0.95
+            },
+            {
+                "from": "document:b6ed44f3-0258-43f9-a869-b433de9dbd35",
+                "to": "organization:edologic-gmbh",
+                "predicate": "issued_to",
+                "confidence": 0.95
+            }
+        ]
+    };
+</script>
+
+
+
+<script>
+    (function () {
+        const PERSON_RADIUS = 96;
+        const ORG_WIDTH = 240;
+        const ORG_HEIGHT = 106;
+
+        const model = window.LUCIDA_MODEL;
+
+        const links = model.edges.map(e => ({
+            source: e.from,
+            target: e.to,
+            predicate: e.predicate,
+            role: e.role,
+            confidence: e.confidence
+        }));
+
+        renderGraph(model);
+
+        function renderGraph(model) {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            const svg = d3.select("#graph")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .call(
+                    d3.zoom().on("zoom", (event) => {
+                        g.attr("transform", event.transform);
+                    })
+                );
+
+            const g = svg.append("g");
+
+            const color = (type) => {
+                if (type === "person") return "#4FC3F7";
+                if (type === "organization") return "#81C784";
+                if (type === "document") return "none";
+                return "#ccc";
+            };
+
+            const simulation = d3.forceSimulation(model.nodes)
+                .force(
+                    "link",
+                    d3.forceLink(links)
+                        .id(d => d.id)
+                        .distance(140)
+                        .strength(d => d.confidence ?? 0.7)
+                )
+                .force("charge", d3.forceManyBody().strength(-380))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force(
+                    "collision",
+                    d3.forceCollide().radius(d => {
+                        if (d.type === "organization") return ORG_WIDTH;
+                        if (d.type === "person") return PERSON_RADIUS * 2.0;
+                        return 40; // document
+                    })
+                );
+
+            const link = g.append("g")
+                .selectAll("line")
+                .data(links)
+                .enter()
+                .append("line")
+                .attr("stroke", d =>
+                    d.predicate.startsWith("issued") ? "#FFB74D" : "#666"
+                )
+                .attr("stroke-dasharray", d =>
+                    d.predicate.startsWith("issued") ? "2 3" :
+                        (d.predicate === "has_role_at" && !d.role ? "4 4" : null)
+                )
+                .attr("stroke-opacity", d =>
+                    d.predicate.startsWith("issued") ? 0.9 : 0.8
+                )
+                .attr("stroke-width", d => 1 + (d.confidence ?? 0.7) * 3);
+
+            const linkLabel = g.append("g")
+                .selectAll("text")
+                .data(links)
+                .enter()
+                .append("text")
+                .attr("font-size", "11px")
+                .attr("fill", "#aaa")
+                .attr("text-anchor", "middle")
+                .attr("pointer-events", "none")
+                .text(d => {
+                    if (d.predicate === "has_role_at" && d.role) return d.role;
+                    if (d.predicate === "has_role_at") return "associated";
+                    if (d.predicate === "issued_by") return "issuer";
+                    if (d.predicate === "issued_to") return "recipient";
+                    return "";
+                });
+
+            const node = g.append("g")
+                .selectAll("g")
+                .data(model.nodes)
+                .enter()
+                .append("g")
+                .call(
+                    d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended)
+                );
+
+            // SHAPES
+            node.append(d => {
+                if (d.type === "organization") {
+                    return document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                }
+                if (d.type === "person") {
+                    return document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                }
+                return document.createElementNS("http://www.w3.org/2000/svg", "text"); // document
+            })
+                .each(function (d) {
+                    const el = d3.select(this);
+
+                    if (d.type === "person") {
+                        el
+                            .attr("r", PERSON_RADIUS)
+                            .attr("fill", color(d.type))
+                            .attr("stroke", "#111")
+                            .attr("stroke-width", 2);
+                    }
+
+                    if (d.type === "organization") {
+                        el
+                            .attr("width", ORG_WIDTH)
+                            .attr("height", ORG_HEIGHT)
+                            .attr("x", -ORG_WIDTH / 2)
+                            .attr("y", -ORG_HEIGHT / 2)
+                            .attr("rx", 10)
+                            .attr("fill", color(d.type))
+                            .attr("stroke", "#111")
+                            .attr("stroke-width", 2);
+                    }
+
+                    if (d.type === "document") {
+                        el
+                            .attr("text-anchor", "middle")
+                            .attr("dy", "0.35em")
+                            .attr("fill", "#FFB74D")
+                            .attr("font-size", "14px")
+                            .attr("font-weight", "700")
+                            .attr("letter-spacing", "0.06em")
+                            .style("filter", "drop-shadow(0 0 2px rgba(255,183,77,0.6))")
+                            .text(d.label.toUpperCase());
+                    }
+                });
+
+            // ICONS for person + organization above label
+            node.filter(d => d.type === "person" || d.type === "organization")
+                .append("text")
+                .attr("class", "material-icons")
+                .attr("text-anchor", "middle")
+                .attr("y", d => d.type === "organization" ? -ORG_HEIGHT / 2 + 36 : -PERSON_RADIUS + 36)
+                .attr("fill", "#222")
+                .style("filter", "drop-shadow(0 0 2px rgba(255,255,255,0.25))")
+                .attr("font-size", "40px")
+                .attr("pointer-events", "none")
+                .text(d => d.type === "person" ? "person" : "business");
+
+            // LABELS for person + organization only
+            node.filter(d => d.type !== "document")
+                .append("text")
+                .attr("paint-order", "stroke")
+                .attr("stroke", "#000")
+                .attr("stroke-width", 1)
+                .attr("text-anchor", "middle")
+                .attr("dy", "0.35em")
+                .attr("fill", "#111")
+                .style("filter", "drop-shadow(0 0 2px rgba(255,255,255,0.35))")
+                .attr("font-size", d => d.type === "organization" ? "14px" : "13px")
+                .attr("font-weight", d => d.type === "organization" ? "600" : "500")
+                .attr("pointer-events", "none")
+                .text(d =>
+                    d.label.length > 26
+                        ? d.label.slice(0, 25) + "…"
+                        : d.label
+                );
+
+            // TOOLTIP
+            node.append("title")
+                .text(d => `${d.label}\n(${d.type})`);
+
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                linkLabel
+                    .attr("x", d => (d.source.x + d.target.x) / 2)
+                    .attr("y", d => (d.source.y + d.target.y) / 2);
+
+                node
+                    .attr("transform", d => `translate(${d.x}, ${d.y})`);
+            });
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+    })();
+</script>
+
+</body>
+</html>

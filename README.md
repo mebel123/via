@@ -1,120 +1,115 @@
 # VIA Desktop Recorder
 
-VIA is a cross platform desktop application built with Tauri and Next.js.  
-It demonstrates a global system shortcut driven recording workflow with a clear separation between UI logic and native desktop capabilities.
+VIA is a desktop application that records voice input, transcribes it, and enriches it through AI-powered processing. The goal is to seamlessly transform spoken thoughts into structured information—whether as a note, formatted text, or context-aware output.
 
-The focus of the project is a clean architecture, reproducible setup, and a foundation that can be extended with speech to text and AI based enrichment.
+The application was developed as part of a competition where Next.js was a required foundation.
 
-## Motivation
+## Features
 
-Many modern applications require system wide interactions that work independently of window focus.  
-Purely browser based solutions quickly reach their limits in these scenarios.
+*   **Global Hotkey:** The app can be activated at any time via a keyboard shortcut (Default: `Cmd+Shift+Space` or `Ctrl+Shift+Space`), regardless of the active window.
+*   **Voice Pipeline:**
+    1.  **Recording:** Audio is recorded locally.
+    2.  **Transcription:** Speech-to-text conversion (via OpenAI Whisper).
+    3.  **Enrichment:** Extraction of entities (persons, organizations, projects) from the transcript.
+*   **Modern UI:** Next.js frontend embedded in Tauri.
 
-VIA shows how a modern web frontend can be combined with native desktop features without sacrificing developer experience or performance.
+## Tech Stack
 
-## Core Features
+*   **Frontend:** Next.js (React, TypeScript)
+*   **Desktop Runtime:** Tauri (Rust)
+*   **Backend Logic:** Rust (for audio recording, pipeline orchestration, API calls)
+*   **AI Integration:** OpenAI API (Whisper for transcription, GPT for entity extraction)
 
-1. Global system shortcut independent of the active window  
-2. Toggle mechanism to start and stop a recording  
-3. Clear visual recording state in the UI  
-4. Separation of frontend logic and native desktop integration  
-5. Hot reload capable development workflow
+## Architecture
 
-## Technology Stack
+The application follows a clear separation between Frontend (UI) and Backend (System Logic):
 
-1. Tauri for the desktop runtime and system APIs  
-2. Next.js for the user interface  
-3. React with client components  
-4. TypeScript  
-5. Rust in the Tauri backend  
-6. Node.js version 20 or higher
+*   **Frontend (Next.js):** Visualizes the status (Ready, Recording, Processing) and displays results. Communicates with the backend via Tauri Commands and Events.
+*   **Backend (Rust):**
+    *   Manages the global shortcut.
+    *   Controls audio recording.
+    *   Executes the "Processing Pipeline": A sequence of steps (Transcription -> Entity Extraction) processed sequentially.
 
-## Architecture Overview
+### Folder Structure
 
-The application is split into two clearly separated parts.
+```
+via/
+├── app/                    # Next.js Frontend & Tauri Root
+│   ├── src/                # React Components & Pages
+│   ├── src-tauri/          # Rust Backend & Tauri Config
+│   │   ├── src/
+│   │   │   ├── pipeline/   # Logic for the processing pipeline
+│   │   │   │   ├── transcription.rs  # Whisper API Integration
+│   │   │   │   ├── entities.rs       # Entity Extraction
+│   │   │   │   └── ...
+│   │   │   ├── lib.rs      # Tauri Setup & Commands
+│   │   │   └── main.rs     # Entry Point
+│   │   ├── capabilities/   # Tauri Permissions
+│   │   └── tauri.conf.json # Tauri Configuration
+│   ├── package.json        # Frontend Dependencies
+│   └── ...
+└── README.md
+```
 
-Frontend  
-The frontend runs as a Next.js application and is responsible for UI, status visualization, and user interaction.
+## Setup & Installation
 
-Backend  
-The Tauri backend provides access to native desktop capabilities such as global shortcuts and, in later stages, audio and recording APIs.
+Prerequisites:
+*   Node.js (v20+ recommended, see `.nvmrc` in `app/`)
+*   Rust Toolchain (via `rustup`)
+*   Tauri CLI (installed locally)
 
-Communication between both layers is handled via Tauri plugins and events.
-
-## Global Shortcut Flow
-
-1. The application starts and registers a global shortcut  
-2. The shortcut is captured system wide  
-3. On the first trigger, recording is started  
-4. On the next trigger, recording is stopped  
-5. The current state is reflected immediately in the UI
-
-## Development
-
-Requirements:
-
-1. Node.js version 20 or newer  
-2. Rust toolchain  
-3. Tauri CLI
-
-Setup:
-
-1. Clone the repository  
-2. Change into the app directory  
-3. Install dependencies
-
+### 1. Clone Repository
 
 ```bash
+git clone <repo-url>
+cd via
+```
+
+### 2. Install Dependencies
+
+Switch to the `app` directory, as it contains both the frontend and the Tauri configuration.
+
+```bash
+cd app
 npm install
 ```
 
+*Note: The necessary Tauri plugins and the CLI are already defined in `package.json` and will be installed automatically.*
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the `app` directory to store your OpenAI API Key. This is required for transcription and enrichment.
 
 ```bash
-npm install @tauri-apps/plugin-global-shortcut
-npx tauri add global-shortcut
+# app/.env
+OPENAI_API_KEY=sk-proj-....
 ```
 
-Start the development environment:
+### 4. Start Development Environment
+
+Start the app in development mode. This launches the Next.js server and opens the Tauri window.
 
 ```bash
 npx tauri dev
 ```
 
-The Next.js development server is started automatically and embedded into the Tauri desktop window.
+## Usage
 
-## Project Structure
+1.  Start the app.
+2.  Press the global hotkey (configured in `app/src-tauri/tauri.conf.json` or hardcoded in the Rust backend, e.g., `Cmd+Shift+Space`).
+3.  The recording window appears (or the status changes). Speak your note.
+4.  Press the hotkey again to stop recording.
+5.  Processing starts automatically (Transcription -> Extraction).
+6.  The result is displayed in the frontend or saved to the file system (see `app/src-tauri/src/pipeline/`).
 
-app  
-Contains the Next.js application and all UI related logic
+## Design Decisions
 
-src tauri  
-Contains the Tauri configuration, Rust code, and desktop integration
+*   **Tauri over Electron:** Lower resource usage and higher security through Rust.
+*   **Pipeline Pattern:** Processing steps (Transcription, Enrichment) are modular (`PipelineStep` Trait), allowing for easy addition of new steps (e.g., Summarization, To-Do Detection).
+*   **Next.js:** Using a modern web framework enables rapid UI iterations and access to a vast ecosystem of libraries.
 
-## Current Status
-
-Implemented:
-
-1. Stable global shortcut registration  
-2. Toggle logic for recording state  
-3. Visual recording indicator in the UI  
-4. Solid base architecture for further extensions
-
-Planned:
-
-1. Audio recording  
-2. Speech to text integration  
-3. Structured output and export  
-4. AI assisted post processing
-
-## Contest Relevance
-
-This project demonstrates:
-
-1. A clean combination of web technologies and native desktop APIs  
-2. Understanding of system level interactions and UX constraints  
-3. Scalable architecture instead of throwaway prototype code  
-4. Focus on real world product requirements
-
-## License
-
-MIT
+    1.	Memo / Aufnahme
+    2.	Entities
+    3.	Evidence
+    4.	Knowledge
+    5.	Überarbeitung / Resolver / Fragen

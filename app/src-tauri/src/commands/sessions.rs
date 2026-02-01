@@ -1,0 +1,135 @@
+use serde::Serialize;
+use tauri::{AppHandle, Manager};
+use walkdir::WalkDir;
+use tokio::fs;
+
+#[derive(Serialize)]
+pub struct SessionSummary {
+    pub id: String,
+    pub date: String,
+    pub title: String,
+    pub raw: String,
+    pub persons: Vec<String>,
+    pub organizations: Vec<String>,
+    pub locations: Vec<String>,
+    pub projects: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String> {
+    let data_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "app data dir not available")?;
+
+    println!("▶ list_sessions scanning {}", data_root.display());
+
+    let mut sessions = Vec::new();
+
+    for entry in WalkDir::new(&data_root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_dir())
+    {
+        let record_dir = entry.path();
+
+        let entities_path = record_dir.join("entities.json");
+        let processing_path = record_dir.join("processing.json");
+        let text_path = record_dir.join("text.txt");
+
+        if !processing_path.exists() || !text_path.exists() || !entities_path.exists() {
+            continue;
+        }
+
+        let id = record_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let processing_raw = fs::read_to_string(&processing_path)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let processing: serde_json::Value =
+            serde_json::from_str(&processing_raw).map_err(|e| e.to_string())?;
+
+        let date = processing
+            .get("started_at")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        use std::collections::HashSet;
+
+        let raw = fs::read_to_string(&text_path)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let entities_raw = fs::read_to_string(&entities_path)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let entities_json: serde_json::Value =
+            serde_json::from_str(&entities_raw).map_err(|e| e.to_string())?;
+
+        let mut persons_set: HashSet<String> = HashSet::new();
+        let mut organizations_set: HashSet<String> = HashSet::new();
+        let mut locations_set: HashSet<String> = HashSet::new();
+        let mut projects_set: HashSet<String> = HashSet::new();
+
+        if let Some(items) = entities_json.get("entities").and_then(|v| v.as_array()) {
+            for item in items {
+                let entity_type = item.get("type").and_then(|v| v.as_str());
+                let text = item.get("text").and_then(|v| v.as_str());
+
+                if let (Some(t), Some(value)) = (entity_type, text) {
+                    match t {
+                        "person" => {
+                            persons_set.insert(value.to_string());
+                        }
+                        "organization" => {
+                            organizations_set.insert(value.to_string());
+                        }
+                        "location" => {
+                            locations_set.insert(value.to_string());
+                        }
+                        "project" => {
+                            projects_set.insert(value.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        let persons: Vec<String> = persons_set.into_iter().collect();
+        let organizations: Vec<String> = organizations_set.into_iter().collect();
+        let locations: Vec<String> = locations_set.into_iter().collect();
+        let projects: Vec<String> = projects_set.into_iter().collect();
+
+
+        let title = raw
+            .lines()
+            .next()
+            .unwrap_or("Session")
+            .chars()
+            .take(80)
+            .collect::<String>();
+
+        sessions.push(SessionSummary {
+            id,
+            date,
+            title,
+            raw,
+            persons,
+            organizations,
+            locations,
+            projects,
+        });
+    }
+
+    sessions.sort_by(|a, b| b.date.cmp(&a.date));
+
+    Ok(sessions)
+}

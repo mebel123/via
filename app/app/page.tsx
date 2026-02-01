@@ -1,18 +1,56 @@
 "use client";
-import { invoke } from "@tauri-apps/api/core";
-import { useState, useEffect } from "react";
-import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import {invoke} from "@tauri-apps/api/core";
+import {useState, useEffect} from "react";
+import {register, unregisterAll} from "@tauri-apps/plugin-global-shortcut";
+
+type Tab = "sessions" | "todos" | "knowledge";
+
+type Session = {
+    id: string;
+    date: string;
+    title: string;
+    raw: string;
+    persons: string[];
+    organizations: string[];
+    locations: string[];
+    projects: string[];
+};
+
+const mockTodos = [
+    {
+        id: "1",
+        text: "Beziehung zwischen Matthias Ebel-Koch und Edo Logic GmbH bestätigen",
+        type: "frage"
+    },
+    {
+        id: "2",
+        text: "Projekt Einfach Wuhu weiter ausarbeiten",
+        type: "aufgabe"
+    }
+];
 
 export default function Home() {
+    const [activeTab, setActiveTab] = useState<Tab>("sessions");
+    const [selectedSession, setSelectedSession] = useState<string | null>(null);
+
     const [logs, setLogs] = useState<string[]>([]);
     const [status, setStatus] = useState<string>("Initialisiere...");
     const [isRecording, setIsRecording] = useState(false);
+    const [sessions, setSessions] = useState<Session[]>([]);
+    type KnowledgeView = "overview" | "graph";
 
+    const [knowledgeView, setKnowledgeView] = useState<KnowledgeView>("overview");
     const SHORTCUT = "CommandOrControl+Shift+U";
 
     useEffect(() => {
-        document.title = isRecording ? "Lucida ● REC" : "Lucida";
+        document.title = isRecording ? "VIA ● REC" : "VIA";
     }, [isRecording]);
+
+    useEffect(() => {
+        invoke<Session[]>("list_sessions")
+            .then(setSessions)
+            .catch(console.error);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -21,99 +59,223 @@ export default function Home() {
             try {
                 await unregisterAll();
 
-
                 await register(SHORTCUT, (event) => {
                     if (event.state !== "Pressed") return;
 
                     setIsRecording((prev) => {
                         const nextState = !prev;
                         const timestamp = new Date().toLocaleTimeString();
+
                         if (nextState) {
-                            invoke("start_recording").catch((e) => {
-                                console.warn("start_recording failed:", e);
+                            invoke("start_recording").catch(() => {
                             });
                         } else {
-                            invoke("stop_recording").catch((e) => {
-                                console.warn("stop_recording failed:", e);
+                            invoke("stop_recording").catch(() => {
                             });
                         }
+
                         const message = nextState
                             ? `● Aufnahme gestartet um ${timestamp}`
                             : `■ Aufnahme beendet um ${timestamp}`;
 
                         setLogs((prevLogs) => [message, ...prevLogs]);
-                        setStatus(nextState ? "Aufnahme läuft…" : `Bereit! Drücke ${SHORTCUT}`);
+                        setStatus(nextState ? "Aufnahme läuft…" : `Bereit!`);
 
                         return nextState;
                     });
                 });
 
                 if (isMounted) {
-                    setStatus(`Bereit! Drücke ${SHORTCUT}`);
+                    setStatus(`Bereit! ${SHORTCUT}`);
                 }
-            } catch (err) {
-                console.error("Hotkey Fehler:", err);
-                if (isMounted) setStatus("Fehler beim Registrieren (siehe Konsole)");
+            } catch {
+                if (isMounted) setStatus("Hotkey-Fehler");
             }
         }
-
         setupShortcut();
 
-        // WICHTIG: Cleanup-Funktion
-        // Wird ausgeführt, wenn die Komponente entladen wird (oder beim Hot-Reload)
         return () => {
             isMounted = false;
-            unregisterAll(); // Löscht den Shortcut sauber im Backend
+            unregisterAll();
         };
     }, []);
 
+    const currentSession = sessions.find(s => s.id === selectedSession);
+
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
-            <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex flex-col gap-8">
+        <main className="min-h-screen bg-gray-900 text-white p-6">
+            {/* Header */}
+            <header className="mb-6">
+                <h1 className="text-3xl font-bold text-blue-400">
+                    VIA
+                </h1>
+                <p className="text-gray-400 text-sm">
+                    Personal Voice Intelligence · {SHORTCUT}
+                </p>
+            </header>
 
-                <h1 className="text-4xl font-bold text-blue-400">Tauri Hotkey Demo</h1>
-
-                {/* Status Anzeige */}
-                <div className="p-4 border border-gray-700 rounded-lg bg-gray-800 w-full text-center">
-                    <p className="text-xl">{status}</p>
-                    <p className="text-gray-400 text-sm mt-2">
-                        Minimiere dieses Fenster und drücke die Tasten, um zu testen.
-                    </p>
-                </div>
-
-                {/* Recording Indicator */}
-                <div className="flex items-center gap-3 justify-center">
-                    <div
-                        className={`w-4 h-4 rounded-full transition-colors duration-300 ${
-                            isRecording ? "bg-red-500 animate-pulse shadow-[0_0_10px_red]" : "bg-gray-600"
-                        }`}
-                    />
-                    <span className={`text-lg font-bold ${isRecording ? "text-red-400" : "text-gray-500"}`}>
-                        {isRecording ? "REC" : "IDLE"}
-                    </span>
-                </div>
-
-                {/* Log Bereich */}
-                <div className="w-full h-64 overflow-y-auto border border-gray-700 rounded-lg bg-black p-4 shadow-inner">
-                    {logs.length === 0 ? (
-                        <p className="text-gray-500 italic text-center mt-10">Warte auf Eingabe...</p>
-                    ) : (
-                        logs.map((log, index) => (
-                            <div key={index} className="mb-2 border-b border-gray-800 pb-1 text-green-400 font-mono">
-                                {log}
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                <button
-                    onClick={() => setLogs([])}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded transition text-white border border-gray-500"
-                >
-                    Logs leeren
-                </button>
-
+            {/* Status */}
+            <div className="flex items-center gap-4 mb-6">
+                <div
+                    className={`w-3 h-3 rounded-full ${
+                        isRecording ? "bg-red-500 animate-pulse" : "bg-gray-500"
+                    }`}
+                />
+                <span className="text-sm">{status}</span>
             </div>
+
+            {/* Tabs */}
+            <div className="flex gap-4 border-b border-gray-700 mb-6">
+                <button onClick={() => setActiveTab("sessions")}
+                        className={activeTab === "sessions" ? "border-b-2 border-blue-400 pb-2" : "pb-2 text-gray-400"}>
+                    Sessions
+                </button>
+                <button onClick={() => setActiveTab("todos")}
+                        className={activeTab === "todos" ? "border-b-2 border-blue-400 pb-2" : "pb-2 text-gray-400"}>
+                    To-Dos
+                </button>
+                <button onClick={() => setActiveTab("knowledge")}
+                        className={activeTab === "knowledge" ? "border-b-2 border-blue-400 pb-2" : "pb-2 text-gray-400"}>
+                    Wissen
+                </button>
+            </div>
+
+            {/* Content */}
+            {activeTab === "sessions" && (
+                <div className="grid grid-cols-3 gap-6">
+                    <div className="col-span-1 border border-gray-700 rounded p-4">
+                        {sessions.map(s => (
+                            <div
+                                key={s.id}
+                                onClick={() => setSelectedSession(s.id)}
+                                className="cursor-pointer mb-3 p-2 rounded hover:bg-gray-800"
+                            >
+                                <div className="font-semibold">{s.title}</div>
+                                <div className="text-xs text-gray-400">{s.date}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="col-span-2 border border-gray-700 rounded p-4">
+                        {!currentSession && (
+                            <p className="text-gray-500">Session auswählen</p>
+                        )}
+
+                        {currentSession && (
+                            <>
+                                <h2 className="text-xl font-bold mb-2">Ergebnis</h2>
+                                <p className="mb-4">summary</p>
+                                currentSession.summary
+
+                                <details className="text-sm text-gray-300">
+                                    <summary className="cursor-pointer mb-2">Rohtranskript</summary>
+                                    <pre className="whitespace-pre-wrap">{currentSession.raw}</pre>
+                                </details>
+                            </>
+                        )}
+                        {currentSession && (
+                            <>
+                                <h2 className="text-xl font-bold mb-2">Ergebnis</h2>
+
+                                <div className="flex flex-wrap gap-2 mb-4 text-xs">
+                                    {currentSession.persons.map(p => (
+                                        <span key={p} className="px-2 py-1 rounded bg-blue-800 text-blue-200">
+                                          👤 {p}
+                                        </span>
+                                    ))}
+                                    {currentSession.organizations.map(o => (
+                                        <span key={o} className="px-2 py-1 rounded bg-green-800 text-green-200">
+                                          🏢 {o}
+                                        </span>
+                                    ))}
+                                    {currentSession.locations.map(l => (
+                                        <span key={l} className="px-2 py-1 rounded bg-yellow-800 text-yellow-200">
+                                          📍 {l}
+                                        </span>
+                                    ))}
+
+                                    {currentSession.projects.map((p) => (
+                                        <span
+                                            key={`project-${p}`}
+                                            className="px-2 py-1 text-xs rounded bg-amber-600 text-black"
+                                        >
+                                            🧩 {p}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                <p className="mb-4">summary</p>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {activeTab === "todos" && (
+                <div className="space-y-4">
+                    {mockTodos.map(todo => (
+                        <div key={todo.id}
+                             className="border border-gray-700 rounded p-4 flex justify-between items-center">
+                            <div>
+                                <div className="font-medium">{todo.text}</div>
+                                <div className="text-xs text-gray-400">{todo.type}</div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button className="px-3 py-1 bg-green-600 rounded text-sm">Bestätigen</button>
+                                <button className="px-3 py-1 bg-gray-700 rounded text-sm">Ignorieren</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {activeTab === "knowledge" && (
+                <div className="w-full h-full flex flex-col gap-4">
+                    {/* Sub Tabs */}
+                    <div className="flex gap-4 border-b border-gray-700">
+                        <button
+                            onClick={() => setKnowledgeView("overview")}
+                            className={
+                                knowledgeView === "overview"
+                                    ? "border-b-2 border-blue-400 pb-2"
+                                    : "pb-2 text-gray-400"
+                            }
+                        >
+                            Übersicht
+                        </button>
+
+                        <button
+                            onClick={() => setKnowledgeView("graph")}
+                            className={
+                                knowledgeView === "graph"
+                                    ? "border-b-2 border-blue-400 pb-2"
+                                    : "pb-2 text-gray-400"
+                            }
+                        >
+                            Graph
+                        </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-h-0">
+                        {knowledgeView === "overview" && (
+                            <div className="text-gray-400">
+                                Wissensübersicht folgt.
+                                <br />
+                                Personen, Organisationen, Projekte, Orte.
+                            </div>
+                        )}
+
+                        {knowledgeView === "graph" && (
+                            <iframe
+                                src="/graph.html"
+                                className="w-full h-full border-0"
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
+
