@@ -4,7 +4,9 @@ on:
   push:
     tags:
       - "v*.*.*"
-
+defaults:
+  run:
+    working-directory: app
 jobs:
   build:
     permissions:
@@ -23,6 +25,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Debug paths
+        run: |
+          pwd
+          ls -la
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
