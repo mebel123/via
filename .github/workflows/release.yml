@@ -5,9 +5,11 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+
 defaults:
   run:
     working-directory: app
+
 jobs:
   build:
     permissions:
@@ -21,15 +23,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug paths
+        run: |
+          pwd
+          ls -la
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Debug paths
-        run: |
-          pwd
-          ls -la
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
