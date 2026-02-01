@@ -16,7 +16,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        platform: [ macos-latest, windows-latest, ubuntu-22.04 ]
+        platform: [ macos-latest, windows-latest ]
 
     runs-on: ${{ matrix.platform }}
 
