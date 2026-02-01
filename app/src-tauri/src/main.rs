@@ -8,6 +8,7 @@ pub mod agents;
 pub mod store;
 pub mod processing;
 pub mod commands;
+use pipeline::evidences::EvidencesPipeline;
 use pipeline::{
     context::RecordContext,
     pipeline::Pipeline,
@@ -62,14 +63,6 @@ async fn stop_recording(state: State<'_, AppState>) -> Result<(), String> {
 
     pipeline.run(&ctx).await?;
 
-    let signals_pipeline = SignalsPipeline;
-
-    Pipeline::new()
-        .add_step(signals_pipeline)
-        .run(&ctx)
-        .await?;
-
-
     let agent = PersonRelationAgent {
         openai_api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
     };
@@ -85,7 +78,18 @@ async fn stop_recording(state: State<'_, AppState>) -> Result<(), String> {
         .run_document(&ctx)
         .await
         .map_err(|e| e.to_string())?;
+    let signals_pipeline = SignalsPipeline;
 
+    Pipeline::new()
+        .add_step(signals_pipeline)
+        .run(&ctx)
+        .await?;
+    let signals_pipeline = EvidencesPipeline;
+
+    Pipeline::new()
+        .add_step(signals_pipeline)
+        .run(&ctx)
+        .await?;
     Ok(())
 }
 

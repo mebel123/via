@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Lucida",
+  "productName": "Via",
   "version": "0.1.0",
   "identifier": "de.edologic.via",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Lucida",
+        "title": "Via",
         "width": 800,
         "height": 600,
         "resizable": true,

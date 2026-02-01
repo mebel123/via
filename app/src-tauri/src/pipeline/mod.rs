@@ -3,4 +3,5 @@ pub mod pipeline;
 pub mod transcription;
 pub mod entities;
 pub mod signals;
-mod knowledge;
+pub mod knowledge;
+pub mod evidences;

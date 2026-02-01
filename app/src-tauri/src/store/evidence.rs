@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EvidenceRecord {
     pub key: String,
 
@@ -22,18 +22,51 @@ pub struct EvidenceRecord {
     pub last_seen: String,
 }
 
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::{Result, Context};
 use tokio::fs;
 
 #[derive(Debug, Default)]
 pub struct EvidenceStore {
     records: HashMap<String, EvidenceRecord>,
-    path: PathBuf,
+    pub(crate) path: PathBuf,
 }
 
 impl EvidenceStore {
+    pub fn merge_record(&mut self, incoming: &EvidenceRecord) {
+        let entry = self
+            .records
+            .entry(incoming.key.clone())
+            .or_insert_with(|| incoming.clone());
+
+        for doc in &incoming.documents {
+            if !entry.documents.contains(doc) {
+                entry.documents.push(doc.clone());
+                entry.occurrences += 1;
+            }
+        }
+
+        for c in &incoming.confidences {
+            entry.confidences.push(*c);
+        }
+        for agent in &incoming.source_agents {
+            if !entry.source_agents.contains(agent) {
+                entry.source_agents.push(agent.clone());
+            }
+        }
+
+        for (k, v) in &incoming.extra {
+            entry.extra.entry(k.clone()).or_insert(v.clone());
+        }
+        if incoming.first_seen < entry.first_seen {
+            entry.first_seen = incoming.first_seen.clone();
+        }
+
+        if incoming.last_seen > entry.last_seen {
+            entry.last_seen = incoming.last_seen.clone();
+        }
+    }
     pub async fn load_or_create(record_dir: &Path) -> Result<Self> {
         let path = record_dir.join("evidence.json");
 
@@ -51,10 +84,7 @@ impl EvidenceStore {
         let list: Vec<EvidenceRecord> =
             serde_json::from_str(&raw).context("invalid evidence.json")?;
 
-        let records = list
-            .into_iter()
-            .map(|r| (r.key.clone(), r))
-            .collect();
+        let records = list.into_iter().map(|r| (r.key.clone(), r)).collect();
 
         Ok(Self { records, path })
     }
@@ -66,7 +96,10 @@ impl EvidenceStore {
         confidence: f32,
         agent: &str,
     ) {
-        let entry = self.records.entry(record.key.clone()).or_insert_with(|| record);
+        let entry = self
+            .records
+            .entry(record.key.clone())
+            .or_insert_with(|| record);
 
         entry.add_occurrence(&document_id, confidence, agent);
     }
@@ -112,12 +145,7 @@ impl EvidenceRecord {
         }
     }
 
-    pub fn add_occurrence(
-        &mut self,
-        document_id: &str,
-        confidence: f32,
-        agent: &str,
-    ) {
+    pub fn add_occurrence(&mut self, document_id: &str, confidence: f32, agent: &str) {
         if !self.documents.contains(&document_id.to_string()) {
             self.documents.push(document_id.to_string());
             self.occurrences += 1;
