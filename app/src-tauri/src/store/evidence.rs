@@ -20,12 +20,76 @@ pub struct EvidenceRecord {
 
     pub first_seen: String,
     pub last_seen: String,
+
+}
+impl EvidenceRecord {
+    pub fn merge_full(&mut self, incoming: EvidenceRecord) {
+        self.occurrences += incoming.occurrences;
+
+        for d in incoming.documents {
+            if !self.documents.contains(&d) {
+                self.documents.push(d);
+            }
+        }
+
+        self.confidences.extend(incoming.confidences);
+
+        for a in incoming.source_agents {
+            if !self.source_agents.contains(&a) {
+                self.source_agents.push(a);
+            }
+        }
+
+        self.last_seen = incoming.last_seen;
+    }
+}
+impl EvidenceRecord {
+    pub fn from_user_confirmation(k: &KnowledgeRecord) -> Self {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        Self {
+            key: format!(
+                "confirm:{}:{}|{}|{}",
+                k.subject_type.to_lowercase(),
+                k.subject_value.to_lowercase(),
+                k.predicate,
+                k.object_value.to_lowercase()
+            ),
+
+            subject_type: k.subject_type.clone(),
+            subject_value: k.subject_value.clone(),
+            predicate: k.predicate.clone(),
+            object_value: k.object_value.clone(),
+
+            occurrences: 1,
+            documents: k.source_documents.clone(),
+            confidences: vec![1.0],
+            source_agents: vec!["USER_CONFIRMATION".to_string()],
+
+            extra: {
+                let mut m = serde_json::Map::new();
+                m.insert(
+                    "confirmed_knowledge_id".to_string(),
+                    serde_json::Value::String(k.id.clone()),
+                );
+                m.insert(
+                    "action".to_string(),
+                    serde_json::Value::String("confirm_relation".to_string()),
+                );
+                m
+            },
+
+            first_seen: now.clone(),
+            last_seen: now,
+        }
+    }
 }
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use crate::store::knowledge::KnowledgeRecord;
 
 #[derive(Debug, Default)]
 pub struct EvidenceStore {
@@ -88,7 +152,16 @@ impl EvidenceStore {
 
         Ok(Self { records, path })
     }
-
+    pub fn insert_or_merge(&mut self, record: EvidenceRecord) {
+        match self.records.get_mut(&record.key) {
+            Some(existing) => {
+                existing.merge_full(record);
+            }
+            None => {
+                self.records.insert(record.key.clone(), record);
+            }
+        }
+    }
     pub fn add_or_update(
         &mut self,
         record: EvidenceRecord,

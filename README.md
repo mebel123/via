@@ -34,19 +34,24 @@ The application follows a clear separation between Frontend (UI) and Backend (Sy
 
 ```
 via/
-├── app/                    # Next.js Frontend & Tauri Root
-│   ├── src/                # React Components & Pages
-│   ├── src-tauri/          # Rust Backend & Tauri Config
+├── app/                              # Next.js Frontend & Tauri Root
+│   ├── src/                          # React Components & Pages
+│   ├── src-tauri/                    # Rust Backend & Tauri Config
 │   │   ├── src/
-│   │   │   ├── pipeline/   # Logic for the processing pipeline
+│   │   │   ├── agents/               # Ai LLM Agents
+│   │   │   ├── commands/             # Backend logic from ui
+│   │   │   ├── resolvers/            # Logic resolvers
+│   │   │   │   ├── steps/            # Resolver steps
+│   │   │   ├── pipeline/             # Logic for the processing pipeline
 │   │   │   │   ├── transcription.rs  # Whisper API Integration
 │   │   │   │   ├── entities.rs       # Entity Extraction
 │   │   │   │   └── ...
-│   │   │   ├── lib.rs      # Tauri Setup & Commands
-│   │   │   └── main.rs     # Entry Point
-│   │   ├── capabilities/   # Tauri Permissions
-│   │   └── tauri.conf.json # Tauri Configuration
-│   ├── package.json        # Frontend Dependencies
+│   │   │   ├── store/                # Backend Stores
+│   │   │   ├── lib.rs                # Tauri Setup & Commands
+│   │   │   └── main.rs               # Entry Point
+│   │   ├── capabilities/             # Tauri Permissions
+│   │   └── tauri.conf.json           # Tauri Configuration
+│   ├── package.json                  # Frontend Dependencies
 │   └── ...
 └── README.md
 ```
@@ -113,3 +118,10 @@ npx tauri dev
     3.	Evidence
     4.	Knowledge
     5.	Überarbeitung / Resolver / Fragen
+          Transcription
+          → EntityExtraction
+          → PersonRelationAgent
+          → ContextRelationAgent
+          → EvidenceAggregator
+          → KnowledgeBuilder
+          → (später) Resolver

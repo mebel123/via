@@ -1,35 +1,89 @@
 "use client";
 import {invoke} from "@tauri-apps/api/core";
-import {useState, useEffect} from "react";
+import {useState, useEffect, useRef} from "react";
 import {register, unregisterAll} from "@tauri-apps/plugin-global-shortcut";
 
 type Tab = "sessions" | "todos" | "knowledge";
+type GraphModel = {
+    meta: {
+        generated_at: string;
+    };
+    nodes: {
+        id: string;
+        label: string;
+        type: string;
+    }[];
+    edges: {
+        from: string;
+        to: string;
+        predicate: string;
+        confidence: number;
+    }[];
+};
+type KnowledgeRelation = {
+    subject: string;
+    predicate: string;
+    object: string;
+    confidence: number;
+};
+
+type KnowledgeOverview = {
+    persons: string[];
+    organizations: string[];
+    events: string[];
+    relations: KnowledgeRelation[];
+};
+type TodoItem = {
+    id: string;
+    kind: string;
+    status: string;
+    date: string;
+    title: string;
+    target_type: string;
+    target_id: string;
+    confidence: number;
+    source_document: string;
+};
+type SessionEntity = {
+    entity_type: string;
+    value: string;
+};
 
 type Session = {
     id: string;
     date: string;
     title: string;
     raw: string;
-    persons: string[];
-    organizations: string[];
-    locations: string[];
-    projects: string[];
+    entities: SessionEntity[];
 };
 
-const mockTodos = [
-    {
-        id: "1",
-        text: "Beziehung zwischen Matthias Ebel-Koch und Edo Logic GmbH bestätigen",
-        type: "frage"
-    },
-    {
-        id: "2",
-        text: "Projekt Einfach Wuhu weiter ausarbeiten",
-        type: "aufgabe"
+function iconFor(type: string) {
+    switch (type) {
+        case "person":
+            return "👤";
+        case "organization":
+            return "🏢";
+        case "location":
+            return "📍";
+        case "project":
+            return "🧩";
+        default:
+            return "🔹";
     }
-];
+}
 
 export default function Home() {
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [graphModel, setGraphModel] = useState<GraphModel | null>(null);
+    const [knowledgeOverview, setKnowledgeOverview] = useState<KnowledgeOverview>({
+        persons: [],
+        organizations: [],
+        events: [],
+        relations: [],
+    });
+    const [todos, setTodos] = useState<TodoItem[]>([]);
+    const [todosLoaded, setTodosLoaded] = useState(false);
+
     const [activeTab, setActiveTab] = useState<Tab>("sessions");
     const [selectedSession, setSelectedSession] = useState<string | null>(null);
 
@@ -41,48 +95,98 @@ export default function Home() {
 
     const [knowledgeView, setKnowledgeView] = useState<KnowledgeView>("overview");
     const SHORTCUT = "CommandOrControl+Shift+U";
+    function refreshKnowledgeGraph() {
+        invoke<GraphModel>("get_knowledge_graph")
+            .then((model) => {
+                console.log("graph model loaded", model);
+                setGraphModel(model);
+            })
+            .catch(console.error);
+    }
+    useEffect(() => {
+        if (!graphModel) return;
+        if (!iframeRef.current?.contentWindow) return;
+
+        console.log("model updated, pushing to iframe");
+
+        iframeRef.current.contentWindow.postMessage(
+            {
+                type: "KNOWLEDGE_GRAPH",
+                payload: graphModel,
+            },
+            "*"
+        );
+    }, [graphModel]);
+
+    useEffect(() => {
+        if (activeTab === "knowledge" && knowledgeView === "graph") {
+            refreshKnowledgeGraph();
+        }
+    }, [activeTab, knowledgeView]);
+    useEffect(() => {
+        if (activeTab !== "sessions") return;
+        if (!selectedSession) return;
+
+        requestAnimationFrame(() => {
+            document.getElementById(`session-${selectedSession}`)?.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+            });
+        });
+    }, [activeTab, selectedSession, sessions.length]);
 
     useEffect(() => {
         document.title = isRecording ? "VIA ● REC" : "VIA";
     }, [isRecording]);
+    useEffect(() => {
+        if (activeTab !== "todos") return;
+        if (todosLoaded) return;
 
+        invoke<TodoItem[]>("list_todos")
+            .then((data) => {
+                setTodos(data);
+                setTodosLoaded(true);
+            })
+            .catch(console.error);
+    }, [activeTab, setTodos, todosLoaded]);
     useEffect(() => {
         invoke<Session[]>("list_sessions")
             .then(setSessions)
             .catch(console.error);
     }, []);
-
+    useEffect(() => {
+        invoke<TodoItem[]>("list_todos")
+            .then(setTodos)
+            .catch(console.error);
+    }, []);
     useEffect(() => {
         let isMounted = true;
 
         async function setupShortcut() {
             try {
                 await unregisterAll();
-
-                await register(SHORTCUT, (event) => {
+                await register(SHORTCUT, async (event) => {
                     if (event.state !== "Pressed") return;
 
-                    setIsRecording((prev) => {
-                        const nextState = !prev;
+                    try {
+                        const isRecording = await invoke<boolean>("recorder_status");
                         const timestamp = new Date().toLocaleTimeString();
-
-                        if (nextState) {
-                            invoke("start_recording").catch(() => {
-                            });
+                        if (!isRecording) {
+                            await invoke("start_recording");
+                            setIsRecording(true);
+                            setStatus(`● Aufnahme gestartet um ${timestamp}`);
                         } else {
-                            invoke("stop_recording").catch(() => {
-                            });
+                            await invoke("stop_recording");
+                            const sessions = await invoke<Session[]>("list_sessions");
+                            setSessions(sessions);
+                            setIsRecording(false);
+                            setStatus(`■ Aufnahme beendet um ${timestamp}`);
+
+                            setLogs((prevLogs) => [...prevLogs]);
                         }
-
-                        const message = nextState
-                            ? `● Aufnahme gestartet um ${timestamp}`
-                            : `■ Aufnahme beendet um ${timestamp}`;
-
-                        setLogs((prevLogs) => [message, ...prevLogs]);
-                        setStatus(nextState ? "Aufnahme läuft…" : `Bereit!`);
-
-                        return nextState;
-                    });
+                    } catch (e) {
+                        console.error(e);
+                    }
                 });
 
                 if (isMounted) {
@@ -92,6 +196,7 @@ export default function Home() {
                 if (isMounted) setStatus("Hotkey-Fehler");
             }
         }
+
         setupShortcut();
 
         return () => {
@@ -99,6 +204,30 @@ export default function Home() {
             unregisterAll();
         };
     }, []);
+
+    function jumpToSession(recordId?: string) {
+        if (!recordId) return;
+        setActiveTab("sessions");
+        setSelectedSession(recordId);
+    }
+
+    function refreshTodos() {
+        invoke<TodoItem[]>("list_todos")
+            .then(setTodos)
+            .catch(console.error);
+    }
+
+    function refreshKnowledgeOverview() {
+        invoke<KnowledgeOverview>("get_knowledge_overview")
+            .then(setKnowledgeOverview)
+            .catch(console.error);
+    }
+
+    useEffect(() => {
+        if (activeTab !== "knowledge") return;
+
+        refreshKnowledgeOverview();
+    }, [activeTab]);
 
     const currentSession = sessions.find(s => s.id === selectedSession);
 
@@ -110,7 +239,7 @@ export default function Home() {
                     VIA
                 </h1>
                 <p className="text-gray-400 text-sm">
-                    Personal Voice Intelligence · {SHORTCUT}
+                    Personal Voice Intelligence · {SHORTCUT} {selectedSession}
                 </p>
             </header>
 
@@ -144,16 +273,24 @@ export default function Home() {
             {activeTab === "sessions" && (
                 <div className="grid grid-cols-3 gap-6">
                     <div className="col-span-1 border border-gray-700 rounded p-4">
-                        {sessions.map(s => (
-                            <div
-                                key={s.id}
-                                onClick={() => setSelectedSession(s.id)}
-                                className="cursor-pointer mb-3 p-2 rounded hover:bg-gray-800"
-                            >
-                                <div className="font-semibold">{s.title}</div>
-                                <div className="text-xs text-gray-400">{s.date}</div>
-                            </div>
-                        ))}
+                        {sessions.map((s) => {
+                            const selected = s.id === selectedSession;
+
+                            return (
+                                <div
+                                    key={s.id}
+                                    id={`session-${s.id}`}
+                                    onClick={() => setSelectedSession(s.id)}
+                                    className={[
+                                        "cursor-pointer mb-3 p-2 rounded",
+                                        selected ? "bg-blue-900/40 border border-blue-500/40" : "hover:bg-gray-800",
+                                    ].join(" ")}
+                                >
+                                    <div className="font-semibold">{s.title}</div>
+                                    <div className="text-xs text-gray-400">{s.date}</div>
+                                </div>
+                            );
+                        })}
                     </div>
 
                     <div className="col-span-2 border border-gray-700 rounded p-4">
@@ -178,29 +315,13 @@ export default function Home() {
                                 <h2 className="text-xl font-bold mb-2">Ergebnis</h2>
 
                                 <div className="flex flex-wrap gap-2 mb-4 text-xs">
-                                    {currentSession.persons.map(p => (
-                                        <span key={p} className="px-2 py-1 rounded bg-blue-800 text-blue-200">
-                                          👤 {p}
-                                        </span>
-                                    ))}
-                                    {currentSession.organizations.map(o => (
-                                        <span key={o} className="px-2 py-1 rounded bg-green-800 text-green-200">
-                                          🏢 {o}
-                                        </span>
-                                    ))}
-                                    {currentSession.locations.map(l => (
-                                        <span key={l} className="px-2 py-1 rounded bg-yellow-800 text-yellow-200">
-                                          📍 {l}
-                                        </span>
-                                    ))}
-
-                                    {currentSession.projects.map((p) => (
+                                    {currentSession.entities.map(e => (
                                         <span
-                                            key={`project-${p}`}
-                                            className="px-2 py-1 text-xs rounded bg-amber-600 text-black"
+                                            key={`${e.entity_type}:${e.value}`}
+                                            className="px-2 py-1 rounded bg-gray-700 text-xs"
                                         >
-                                            🧩 {p}
-                                        </span>
+                                        {iconFor(e.entity_type)} {e.value}
+                                      </span>
                                     ))}
                                 </div>
 
@@ -213,16 +334,44 @@ export default function Home() {
 
             {activeTab === "todos" && (
                 <div className="space-y-4">
-                    {mockTodos.map(todo => (
+                    {todos.length === 0 && (
+                        <p className="text-gray-500">Keine To-Dos vorhanden</p>
+                    )}
+
+                    {todos.map(todo => (
                         <div key={todo.id}
                              className="border border-gray-700 rounded p-4 flex justify-between items-center">
                             <div>
-                                <div className="font-medium">{todo.text}</div>
-                                <div className="text-xs text-gray-400">{todo.type}</div>
+                                <div className="font-medium">{todo.title}</div>
+                                <div className="text-xs text-gray-400">
+                                    {todo.kind} · {todo.status}
+                                </div>
                             </div>
                             <div className="flex gap-2">
-                                <button className="px-3 py-1 bg-green-600 rounded text-sm">Bestätigen</button>
-                                <button className="px-3 py-1 bg-gray-700 rounded text-sm">Ignorieren</button>
+                                <button
+                                    onClick={() => jumpToSession(todo.source_document)}
+                                    className="px-3 py-1 bg-blue-600 rounded text-sm"
+                                >
+                                    Zur Session
+                                </button>
+
+                                <button className="px-3 py-1 bg-green-600 rounded text-sm"
+                                        onClick={() =>
+                                            invoke("confirm_todo", {knowledgeId: todo.id})
+                                                .then(() => refreshTodos())
+                                        }
+                                >
+                                    Bestätigen
+                                </button>
+
+                                <button className="px-3 py-1 bg-gray-700 rounded text-sm"
+                                        onClick={() =>
+                                            invoke("ignore_todo", {knowledgeId: todo.id})
+                                                .then(() => refreshTodos())
+                                        }
+                                >
+                                    Ignorieren
+                                </button>
                             </div>
                         </div>
                     ))}
@@ -257,20 +406,59 @@ export default function Home() {
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 ">
                         {knowledgeView === "overview" && (
-                            <div className="text-gray-400">
-                                Wissensübersicht folgt.
-                                <br />
-                                Personen, Organisationen, Projekte, Orte.
+                            <div className="text-sm text-gray-300 space-y-4">
+                                <div>
+                                    <h3>Personen</h3>
+                                    {knowledgeOverview.persons.map(p => (
+                                        <div key={p}>👤 {p}</div>
+                                    ))}
+                                </div>
+
+                                <div>
+                                    <h3>Organisationen</h3>
+                                    {knowledgeOverview.organizations.map(o => (
+                                        <div key={o}>🏢 {o}</div>
+                                    ))}
+                                </div>
+
+                                <div>
+                                    <h3>Relationen</h3>
+                                    {knowledgeOverview.relations.map((r, i) => (
+                                        <div key={i}>
+                                            {r.subject} {r.predicate} {r.object}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 
                         {knowledgeView === "graph" && (
+                            <div className="relative flex-1 min-h-0">
                             <iframe
+                                ref={iframeRef}
                                 src="/graph.html"
+                                style={{height: '320px'}}
                                 className="w-full h-full border-0"
+                                onLoad={() => {
+                                    if (!graphModel) {
+                                        console.log("iframe loaded, but no model yet");
+                                        return;
+                                    }
+
+                                    console.log("iframe loaded, sending model");
+
+                                    iframeRef.current?.contentWindow?.postMessage(
+                                        {
+                                            type: "KNOWLEDGE_GRAPH",
+                                            payload: graphModel,
+                                        },
+                                        "*"
+                                    );
+                                }}
                             />
+                            </div>
                         )}
                     </div>
                 </div>

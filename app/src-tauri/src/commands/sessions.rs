@@ -2,17 +2,19 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use walkdir::WalkDir;
 use tokio::fs;
-
+use crate::processing::processing::ProcessingFile;
+#[derive(Serialize)]
+pub struct SessionEntity {
+    pub entity_type: String,
+    pub value: String,
+}
 #[derive(Serialize)]
 pub struct SessionSummary {
     pub id: String,
     pub date: String,
     pub title: String,
     pub raw: String,
-    pub persons: Vec<String>,
-    pub organizations: Vec<String>,
-    pub locations: Vec<String>,
-    pub projects: Vec<String>,
+    pub entities: Vec<SessionEntity>,
 }
 
 #[tauri::command]
@@ -41,27 +43,18 @@ pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String
             continue;
         }
 
-        let id = record_dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
 
-        let processing_raw = fs::read_to_string(&processing_path)
-            .await
-            .map_err(|e| e.to_string())?;
 
-        let processing: serde_json::Value =
-            serde_json::from_str(&processing_raw).map_err(|e| e.to_string())?;
 
-        let date = processing
-            .get("started_at")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let processing =
+            ProcessingFile::load(&record_dir)
+                .await
+                .map_err(|e| e.to_string())?;
 
-        use std::collections::HashSet;
 
+        let date = processing.started_at;
+        let id = processing.doc_id;
+        
         let raw = fs::read_to_string(&text_path)
             .await
             .map_err(|e| e.to_string())?;
@@ -78,30 +71,28 @@ pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String
         let mut locations_set: HashSet<String> = HashSet::new();
         let mut projects_set: HashSet<String> = HashSet::new();
 
+        use std::collections::HashSet;
+
+        let mut entities_set: HashSet<(String, String)> = HashSet::new();
+
         if let Some(items) = entities_json.get("entities").and_then(|v| v.as_array()) {
             for item in items {
                 let entity_type = item.get("type").and_then(|v| v.as_str());
                 let text = item.get("text").and_then(|v| v.as_str());
 
                 if let (Some(t), Some(value)) = (entity_type, text) {
-                    match t {
-                        "person" => {
-                            persons_set.insert(value.to_string());
-                        }
-                        "organization" => {
-                            organizations_set.insert(value.to_string());
-                        }
-                        "location" => {
-                            locations_set.insert(value.to_string());
-                        }
-                        "project" => {
-                            projects_set.insert(value.to_string());
-                        }
-                        _ => {}
-                    }
+                    entities_set.insert((t.to_string(), value.to_string()));
                 }
             }
         }
+
+        let entities = entities_set
+            .into_iter()
+            .map(|(entity_type, value)| SessionEntity {
+                entity_type,
+                value,
+            })
+            .collect::<Vec<_>>();
 
         let persons: Vec<String> = persons_set.into_iter().collect();
         let organizations: Vec<String> = organizations_set.into_iter().collect();
@@ -122,10 +113,7 @@ pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String
             date,
             title,
             raw,
-            persons,
-            organizations,
-            locations,
-            projects,
+            entities,
         });
     }
 

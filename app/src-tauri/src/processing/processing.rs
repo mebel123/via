@@ -15,6 +15,18 @@ pub struct ProcessingFile {
     pub errors: Vec<String>,
 }
 impl ProcessingFile {
+    pub async fn load(
+        record_dir: &Path,
+    ) -> Result<Self> {
+        let path = record_dir.join("processing.json");
+
+        if path.exists() {
+            let content = fs::read_to_string(&path).await?;
+            Ok(serde_json::from_str(&content)?)
+        } else {
+            return Err(anyhow::anyhow!("Processing file not found"));
+        }
+    }
     pub async fn load_or_create(
         record_dir: &Path,
         audio_file: &Path,

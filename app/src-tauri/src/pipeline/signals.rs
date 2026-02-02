@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 
 use crate::pipeline::context::RecordContext;
 use crate::pipeline::pipeline::PipelineStep;
+use crate::processing::processing::ProcessingFile;
 
 #[derive(Debug, Deserialize)]
 struct EntitiesFile {
@@ -66,10 +67,13 @@ impl SignalsPipeline {
             if entry.file_name() != "entities.json" {
                 continue;
             }
+            let processing =
+                ProcessingFile::load(entry.path().parent().unwrap())
+                    .await
+                    .map_err(|e| e.to_string());
+            
             entities_files_found += 1;
 
-
-            println!("▶ found entities.json at {}", entry.path().display());
 
             let record_dir = entry
                 .path()
@@ -81,6 +85,9 @@ impl SignalsPipeline {
                 .context("record dir has no name")?
                 .to_string_lossy()
                 .to_string();
+            let doc_id = processing.unwrap().doc_id;
+            
+            println!("▶ found entities.json at {} with doc_uid: {}", entry.path().display(),doc_id);
 
             let content = fs::read_to_string(entry.path())
                 .await
