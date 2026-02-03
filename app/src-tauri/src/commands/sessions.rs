@@ -65,12 +65,7 @@ pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String
 
         let entities_json: serde_json::Value =
             serde_json::from_str(&entities_raw).map_err(|e| e.to_string())?;
-
-        let mut persons_set: HashSet<String> = HashSet::new();
-        let mut organizations_set: HashSet<String> = HashSet::new();
-        let mut locations_set: HashSet<String> = HashSet::new();
-        let mut projects_set: HashSet<String> = HashSet::new();
-
+        
         use std::collections::HashSet;
 
         let mut entities_set: HashSet<(String, String)> = HashSet::new();
@@ -93,11 +88,7 @@ pub async fn list_sessions(app: AppHandle) -> Result<Vec<SessionSummary>, String
                 value,
             })
             .collect::<Vec<_>>();
-
-        let persons: Vec<String> = persons_set.into_iter().collect();
-        let organizations: Vec<String> = organizations_set.into_iter().collect();
-        let locations: Vec<String> = locations_set.into_iter().collect();
-        let projects: Vec<String> = projects_set.into_iter().collect();
+ 
 
 
         let title = raw

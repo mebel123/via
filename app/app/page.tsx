@@ -2,6 +2,7 @@
 import {invoke} from "@tauri-apps/api/core";
 import {useState, useEffect, useRef} from "react";
 import {register, unregisterAll} from "@tauri-apps/plugin-global-shortcut";
+import {listen} from "@tauri-apps/api/event";
 
 type Tab = "sessions" | "todos" | "knowledge";
 type GraphModel = {
@@ -48,7 +49,12 @@ type SessionEntity = {
     entity_type: string;
     value: string;
 };
-
+type ProgressState = {
+    stage: string;
+    message: string;
+    percent: number;
+    visible: boolean;
+};
 type Session = {
     id: string;
     date: string;
@@ -83,16 +89,15 @@ export default function Home() {
     });
     const [todos, setTodos] = useState<TodoItem[]>([]);
     const [todosLoaded, setTodosLoaded] = useState(false);
-
+    const hideTimeoutRef = useRef<number | null>(null);
     const [activeTab, setActiveTab] = useState<Tab>("sessions");
     const [selectedSession, setSelectedSession] = useState<string | null>(null);
-
-    const [logs, setLogs] = useState<string[]>([]);
+    const [pipelineProgress, setPipelineProgress] =
+        useState<ProgressState | null>(null);
     const [status, setStatus] = useState<string>("Initialisiere...");
     const [isRecording, setIsRecording] = useState(false);
     const [sessions, setSessions] = useState<Session[]>([]);
     type KnowledgeView = "overview" | "graph";
-
     const [knowledgeView, setKnowledgeView] = useState<KnowledgeView>("overview");
     const SHORTCUT = "CommandOrControl+Shift+U";
     function refreshKnowledgeGraph() {
@@ -103,6 +108,40 @@ export default function Home() {
             })
             .catch(console.error);
     }
+    useEffect(() => {
+        const unlisten = listen<ProgressState>("processing:progress", (event) => {
+            const p = event.payload;
+
+            // laufenden Hide-Timer abbrechen
+            if (hideTimeoutRef.current) {
+                clearTimeout(hideTimeoutRef.current);
+                hideTimeoutRef.current = null;
+            }
+
+            setPipelineProgress({
+                ...p,
+                visible: true,
+            });
+
+            if (p.percent >= 100) {
+                // reload sessions once processing is finished
+                invoke<Session[]>("list_sessions")
+                    .then(setSessions)
+                    .catch(console.error);
+
+                hideTimeoutRef.current = window.setTimeout(() => {
+                    setPipelineProgress(null);
+                }, 2000);
+            }
+        });
+
+        return () => {
+            unlisten.then(f => f());
+            if (hideTimeoutRef.current) {
+                clearTimeout(hideTimeoutRef.current);
+            }
+        };
+    }, []);
     useEffect(() => {
         if (!graphModel) return;
         if (!iframeRef.current?.contentWindow) return;
@@ -167,22 +206,34 @@ export default function Home() {
                 await unregisterAll();
                 await register(SHORTCUT, async (event) => {
                     if (event.state !== "Pressed") return;
-
                     try {
-                        const isRecording = await invoke<boolean>("recorder_status");
+                        const backendIsRecording = await invoke<boolean>("recorder_status");
                         const timestamp = new Date().toLocaleTimeString();
-                        if (!isRecording) {
-                            await invoke("start_recording");
+
+                        if (!backendIsRecording) {
+                            await invoke("start_recording").catch(async (e) => {
+                                console.error(e);
+                                const s = await invoke<boolean>("recorder_status");
+                                setIsRecording(s);
+                                throw e;
+                            });
+
                             setIsRecording(true);
                             setStatus(`● Aufnahme gestartet um ${timestamp}`);
                         } else {
-                            await invoke("stop_recording");
-                            const sessions = await invoke<Session[]>("list_sessions");
-                            setSessions(sessions);
+                            const audioPath = await invoke<string>("stop_recording");
+
                             setIsRecording(false);
                             setStatus(`■ Aufnahme beendet um ${timestamp}`);
+                            invoke("process_recording", { audioPath })
+                                .then(() => invoke<Session[]>("list_sessions"))
+                                .then(setSessions)
+                                .catch(console.error);
 
-                            setLogs((prevLogs) => [...prevLogs]);
+                            // await invoke("stop_recording");
+                            // const sessions = await invoke<Session[]>("list_sessions");
+                            // setSessions(sessions);
+                            // setIsRecording(false);
                         }
                     } catch (e) {
                         console.error(e);
@@ -242,7 +293,24 @@ export default function Home() {
                     Personal Voice Intelligence · {SHORTCUT} {selectedSession}
                 </p>
             </header>
+            {pipelineProgress && (
+                <div className="fixed bottom-4 left-4 right-4 bg-gray-800 border border-gray-600 rounded p-3">
+                    <div className="text-xs text-gray-400 mb-1">
+                        {pipelineProgress.stage}
+                    </div>
 
+                    <div className="text-sm mb-2">
+                        {pipelineProgress.message}
+                    </div>
+
+                    <div className="w-full bg-gray-700 h-2 rounded">
+                        <div
+                            className="bg-blue-500 h-2 rounded transition-all"
+                            style={{ width: `${pipelineProgress.percent}%` }}
+                        />
+                    </div>
+                </div>
+            )}
             {/* Status */}
             <div className="flex items-center gap-4 mb-6">
                 <div

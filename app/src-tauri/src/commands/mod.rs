@@ -5,3 +5,6 @@ pub mod todo_confirm;
 pub mod todo_ignore;
 pub mod knowledge_overview;
 pub mod knowledge_graph;
+pub mod process_recording;
+pub mod recording_stop;
+pub mod recording_start;

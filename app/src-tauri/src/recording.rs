@@ -21,6 +21,7 @@ impl Recording {
             recording_thread: None,
         }
     }
+
     pub fn is_recording(&self) -> bool {
         self.is_recording.load(Ordering::SeqCst)
     }

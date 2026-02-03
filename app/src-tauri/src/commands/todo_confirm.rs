@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use chrono::Utc;
 use tauri::{AppHandle, Manager};
 use crate::store::evidence::{EvidenceRecord, EvidenceStore};
@@ -5,6 +6,8 @@ use crate::store::knowledge::KnowledgeStore;
 use crate::pipeline::knowledge_builder::KnowledgeBuilder;
 use crate::pipeline::pipeline::Pipeline;
 use crate::pipeline::context::RecordContext;
+use crate::processing::progress::TauriProgressEmitter;
+
 #[tauri::command]
 pub async fn confirm_todo(
     app: AppHandle,
@@ -47,11 +50,13 @@ pub async fn confirm_todo(
         r.approved_by = "user".into();
         r.updated_at = Some(Utc::now().to_rfc3339());
     }
+    let progress = TauriProgressEmitter::new(app.clone());
 
     knowledge.save().await.map_err(|e| e.to_string())?;
     let ctx = RecordContext {
         base_dir: data_root.clone(),
         audio_file: data_root.clone(),
+        progress: Some(Arc::new(progress)),
     };
 
     Pipeline::new()
